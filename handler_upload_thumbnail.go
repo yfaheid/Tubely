@@ -59,8 +59,8 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	mediaTypeSplit := strings.Split(mediaType, "/")
-	extension := mediaTypeSplit[1]
+	mimeTypeSplit := strings.Split(mimeType, "/")
+	extension := mimeTypeSplit[1]
 	randomBytes := make([]byte, 32)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
