@@ -74,6 +74,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer tmpFile.Close()
 	io.Copy(tmpFile, file)
 	tmpFile.Seek(0, io.SeekStart)
+	processed, err := processVideoForFastStart(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error processing video", err)
+		return
+	}
+	processedFile, err := os.Open(processed)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error processing video", err)
+		return
+	}
+	defer os.Remove(processedFile.Name())
+	defer processedFile.Close()
 
 	mimeTypeSplit := strings.Split(mimeType, "/")
 	extension := mimeTypeSplit[1]
@@ -83,7 +95,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error creating url", err)
 		return
 	}
-	aspectRatio, err := getVideoAspectRatio(tmpFile.Name())
+	aspectRatio, err := getVideoAspectRatio(processedFile.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error getting aspect ratio", err)
 		return
@@ -91,7 +103,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	randomString := base64.RawURLEncoding.EncodeToString(randomBytes)
 	key := fmt.Sprintf("%v/%v.%v", aspectRatio, randomString, extension)
 
-	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{Bucket: &cfg.s3Bucket, Key: &key, Body: tmpFile, ContentType: &mimeType})
+	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{Bucket: &cfg.s3Bucket, Key: &key, Body: processedFile, ContentType: &mimeType})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error adding object to bucket", err)
 		return
@@ -138,4 +150,14 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	} else {
 		return "other", nil
 	}
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	newPath := filePath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newPath)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return newPath, nil
 }
